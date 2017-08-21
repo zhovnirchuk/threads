@@ -1,7 +1,12 @@
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 
 import javax.imageio.ImageIO;
 
@@ -15,14 +20,19 @@ import org.opencv.imgproc.Imgproc;
 
 public class ThreadsProcessor {
 
+	public static final int DOTS = 200;
+	public static final int DIM = DOTS*5 + 1;
+	public static final int PIXELS = DIM * DIM;
+	
+	public static final int LINE_LIMIT = 2000;
+	
 	private Mat original;
 	private Mat result;
 	
 	private String resultFilename;
 	
-	private static final int DOTS = 200;
-	private static final int DIM = DOTS*5 + 1;
-	private static final int PIXELS = DIM * DIM;
+	private ArrayList<Point> points;
+	private ArrayList<Line> lines;
 
 	ThreadsProcessor(File original, String result) {
 		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
@@ -31,8 +41,19 @@ public class ThreadsProcessor {
 			this.original = normalizeOriginal(original);
 		} catch (IOException e) {e.printStackTrace();}
 		
-		this.result = new Mat(DIM, DIM, CvType.CV_16UC1, Scalar.all(255));
+		this.result = new Mat(DIM, DIM, CvType.CV_16UC1);
 		this.resultFilename = result;
+		
+		
+		byte[] temp = new byte[PIXELS];
+		this.original.get(0, 0, temp);
+		
+		this.points = new ArrayList<Point>();
+		for(int i=0; i<PIXELS; i++){
+			this.points.add(new Point(i, (short) (temp[i] + 128) ));
+		}
+		
+		this.lines = new ArrayList<Line>();
 		
 		process();
 	}
@@ -74,22 +95,14 @@ public class ThreadsProcessor {
 		return finalMat;
 	}
 	
-	private void process(){
-		short[] pixels = new short[PIXELS];
-		short[] density = new short[PIXELS];
+	private void process(){		
 		
-		result.get(0, 0, pixels);
-		
-		for (int i = 0; i < PIXELS; i++)
-			density[i] = 0;
-		
-		
-		for (int j = 0; j < DOTS; j++) {
+		/*for (int j = 0; j < DOTS; j++) {
 			double slope = 2 * Math.PI / DOTS * j;
 			int x = (int) (DIM/2 + DIM/2 * Math.sin(slope));
 			int y = (int) (DIM/2 + DIM/2 * Math.cos(slope));
-			pixels[DIM * y + x] = (short) 0;
-		}
+		}*/
+		
 		for (int i = DOTS/8; i < DOTS/2; i++) {
 			for (int k = 0; k < DOTS; k++) {
 				int dotNumberSecond = (k < (DOTS - i) ? (k + i) : (k + i - DOTS));
@@ -99,7 +112,7 @@ public class ThreadsProcessor {
 						* dotNumberSecond));
 				int endY = (int) (DIM/2 + DIM/2 * Math.cos(2 * Math.PI / DOTS
 						* dotNumberSecond));
-				drawLine(density, pixels, startX, startY, endX, endY);
+				drawLine(lines, points, startX, startY, endX, endY);
 			}
 		}
 		for (int l = 0; l < DOTS/2; l++) {
@@ -110,14 +123,30 @@ public class ThreadsProcessor {
 					* dotNumberSecond));
 			int endY = (int) (DIM/2 + DIM/2 * Math.cos(2 * Math.PI / DOTS
 					* dotNumberSecond));
-			drawLine(density, pixels, startX, startY, endX, endY);
+			drawLine(lines, points, startX, startY, endX, endY);
 		}
-		result.put(0, 0, pixels);
+		
+		for(int o=0; o<LINE_LIMIT; o++){
+			for(Line l : lines)
+				l.getWeight();
+				
+			Collections.sort(lines);
+			Line line = lines.remove(0);
+			
+			line.setExists();
+		}
+		
+		short[] putPixels = new short[PIXELS];
+		for(int u=0; u<PIXELS; u++)
+			putPixels[u] = (short) (points.get(u).isExists() ? 0 : 255);
+		result.put(0, 0, putPixels);
 
-		Imgcodecs.imwrite(resultFilename, result);
+		Imgcodecs.imwrite(resultFilename, result); 
+
 	}
 
-	private static void drawLine(short[] density, short[] buff, int x, int y, int x2, int y2) {
+	private static void drawLine(ArrayList<Line> lines, ArrayList<Point> points, int x, int y, int x2, int y2) {
+		ArrayList<Point> linePoints = new ArrayList<Point>();
 		int w = x2 - x;
 		int h = y2 - y;
 		int dx1 = 0, dy1 = 0, dx2 = 0, dy2 = 0;
@@ -146,8 +175,8 @@ public class ThreadsProcessor {
 		}
 		int numerator = longest >> 1;
 		for (int i = 0; i <= longest; i++) {
-			buff[DIM * y + x] = (short) 0;
-			density[DIM * y + x]++;
+			points.get(DIM * y + x).incrementDensity();
+			linePoints.add(points.get(DIM * y + x));
 			numerator += shortest;
 			if (!(numerator < longest)) {
 				numerator -= longest;
@@ -158,6 +187,7 @@ public class ThreadsProcessor {
 				y += dy2;
 			}
 		}
+		lines.add(new Line(linePoints));
 	}
 
 }

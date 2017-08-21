@@ -96,8 +96,9 @@ public class MainWindow {
 		frmThreads.getContentPane().add(btnRun);
 		btnRun.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
+            	Stopwatch timer = new Stopwatch();
                 threadsProcessor = new ThreadsProcessor(originalFile, resultFile);
-            	
+            	System.out.println(timer.elapsedTime());
             	imagePanelOriginal.setImage(threadsProcessor.originalToPanel());
             	try {
 					imagePanelResult.setImage(threadsProcessor.resultToPanel());
